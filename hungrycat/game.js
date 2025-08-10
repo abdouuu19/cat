@@ -14,7 +14,6 @@
 
   const overlayEl = document.getElementById('overlay');
   const gameoverEl = document.getElementById('gameover');
-  const rotateHintEl = document.getElementById('rotateHint');
 
   const playBtn = document.getElementById('play');
   const restartBtn = document.getElementById('restart');
