@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d0f1a" />
+    <title>Hungry Cat</title>
+    <link rel="preload" as="image" href="assets/images/background.jpg" />
+    <link rel="preload" as="image" href="assets/images/cat.png" />
+    <link rel="preload" as="image" href="assets/images/fish-normal.png" />
+    <link rel="preload" as="image" href="assets/images/fish-golden.png" />
+    <link rel="preload" as="image" href="assets/images/water-drop.png" />
+    <link rel="preload" as="audio" href="assets/sounds/meow.mp3" />
+    <link rel="preload" as="audio" href="assets/sounds/splash.mp3" />
+    <link rel="preload" as="audio" href="assets/sounds/gameover.mp3" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game" width="800" height="450"></canvas>
+
+      <div id="hud">
+        <div class="score"><span id="score">0</span></div>
+        <div class="highscore">Best <span id="highscore">0</span></div>
+        <button id="mute" aria-label="Toggle Sound" title="Toggle Sound">🔊</button>
+      </div>
+
+      <div id="controls" aria-label="Move">
+        <button id="left" class="control" aria-label="Move Left">◀</button>
+        <button id="right" class="control" aria-label="Move Right">▶</button>
+      </div>
+
+      <div id="overlay" class="hidden">
+        <div class="panel">
+          <h1>Hungry Cat</h1>
+          <p class="subtitle">Catch fish. Avoid water drops.</p>
+          <div class="legend">
+            <div>🐟 +1</div>
+            <div>🌟 +3</div>
+            <div>💧 Game Over</div>
+          </div>
+          <button id="play">Tap to Play</button>
+        </div>
+      </div>
+
+      <div id="gameover" class="hidden">
+        <div class="panel">
+          <h2>Game Over</h2>
+          <p>Score: <span id="finalScore">0</span></p>
+          <p>Best: <span id="finalHigh">0</span></p>
+          <div class="actions">
+            <button id="restart">Play Again</button>
+            <button id="share" title="Share your score">Share</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="rotateHint" class="hidden">
+        <div class="panel small">
+          <p>Rotate your device for a wider view</p>
+        </div>
+      </div>
+    </div>
+
+    <script src="game.js" defer></script>
+  </body>
+</html>
