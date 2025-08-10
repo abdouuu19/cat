@@ -57,6 +57,12 @@
     } catch {}
   }
 
+  function haptic(pattern) {
+    if (navigator.vibrate) {
+      try { navigator.vibrate(pattern); } catch {}
+    }
+  }
+
   function loadImage(src) {
     const img = new Image();
     img.src = src;
@@ -73,6 +79,7 @@
     spawnEveryMs: 950, // spawn interval
     lastSpawnAt: 0,
     time: 0,
+    slowmo: 0, // seconds of slow-motion after game over
   };
 
   highEl.textContent = String(world.best);
@@ -83,7 +90,8 @@
     width: 96,
     height: 72,
     velocityX: 0,
-    maxSpeed: 360, // px/s
+    maxSpeed: 380, // px/s
+    accel: 1800,   // px/s^2
   };
 
   const inputs = {
@@ -91,7 +99,13 @@
     right: false,
   };
 
+  const tilt = {
+    active: false,
+    gamma: 0, // LR tilt in degrees
+  };
+
   const drops = [];
+  const particles = [];
 
   const TYPES = {
     FISH: 'fish',
@@ -107,7 +121,9 @@
     world.spawnEveryMs = 950;
     world.lastSpawnAt = 0;
     world.time = 0;
+    world.slowmo = 0;
     drops.length = 0;
+    particles.length = 0;
     cat.x = VIEW_W / 2;
     cat.y = VIEW_H - 96;
     cat.velocityX = 0;
@@ -117,6 +133,7 @@
   function endGame() {
     world.gameOver = true;
     world.started = false;
+    world.slowmo = 0.45;
     finalScoreEl.textContent = String(world.score);
     if (world.score > world.best) {
       world.best = world.score;
@@ -132,8 +149,8 @@
     scoreEl.textContent = String(world.score);
 
     // Progression: accelerate and increase spawn rate slightly
-    const speedCap = 520;
-    const spawnCap = 380;
+    const speedCap = 540;
+    const spawnCap = 360;
     world.speed = Math.min(speedCap, 140 + world.score * 8);
     world.spawnEveryMs = Math.max(spawnCap, 950 - world.score * 12);
   }
@@ -171,8 +188,18 @@
     );
   }
 
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
   function update(dt) {
-    if (!world.started || world.gameOver) return;
+    if (!world.started || world.gameOver) {
+      // Slow motion decay while showing gameover
+      if (world.slowmo > 0) {
+        const t = Math.min(dt, world.slowmo);
+        world.slowmo -= t;
+      }
+      return;
+    }
+
     world.time += dt;
 
     // Spawn
@@ -181,9 +208,23 @@
       spawnDrop();
     }
 
-    // Move cat
-    const dir = (inputs.left ? -1 : 0) + (inputs.right ? 1 : 0);
-    cat.velocityX = dir * cat.maxSpeed;
+    // Desired direction from inputs and tilt
+    let desiredDir = (inputs.left ? -1 : 0) + (inputs.right ? 1 : 0);
+    if (tilt.active) {
+      const analog = clamp(tilt.gamma / 30, -1, 1);
+      desiredDir += analog;
+    }
+    desiredDir = clamp(desiredDir, -1, 1);
+
+    // Smooth velocity towards desired
+    const desiredVx = desiredDir * cat.maxSpeed;
+    const deltaV = desiredVx - cat.velocityX;
+    cat.velocityX += clamp(deltaV, -cat.accel * dt, cat.accel * dt);
+    // Apply tiny friction if no input
+    if (Math.abs(desiredDir) < 0.05 && Math.abs(cat.velocityX) > 2) {
+      cat.velocityX *= Math.pow(0.0001, dt); // gentle ease-out
+    }
+
     cat.x += cat.velocityX * dt;
 
     // Clamp to logical view
@@ -201,16 +242,22 @@
       const dRect = { x: d.x, y: d.y, width: d.width, height: d.height };
       if (rectsIntersect(catRect, dRect)) {
         if (d.type === TYPES.WATER) {
+          spawnSplash(d.x + d.width / 2, d.y + d.height / 2, '#66ccff');
+          haptic([40, 40, 60]);
           playSound('splash');
           playSound('gameover');
           endGame();
           break;
         } else if (d.type === TYPES.FISH) {
+          spawnBurst(d.x + d.width / 2, d.y + d.height / 2, '#a8dadc', 12);
+          haptic(20);
           updateScore(1);
           playSound('catch');
           drops.splice(i, 1);
           continue;
         } else if (d.type === TYPES.GOLD) {
+          spawnBurst(d.x + d.width / 2, d.y + d.height / 2, '#ffd166', 16, 1.2);
+          haptic([10, 60, 10]);
           updateScore(3);
           playSound('catch');
           drops.splice(i, 1);
@@ -222,6 +269,56 @@
       if (d.y > VIEW_H + 80) {
         drops.splice(i, 1);
       }
+    }
+
+    // Update particles
+    for (let i = particles.length - 1; i >= 0; i -= 1) {
+      const p = particles[i];
+      p.life -= dt;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      p.vx *= 0.992;
+      p.vy += p.gravity * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.rotation += p.spin * dt;
+    }
+  }
+
+  function spawnBurst(x, y, color, count = 12, speedMul = 1) {
+    for (let i = 0; i < count; i += 1) {
+      const a = Math.random() * Math.PI * 2;
+      const s = (110 + Math.random() * 180) * speedMul;
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        life: 0.5 + Math.random() * 0.4,
+        size: 3 + Math.random() * 3,
+        rotation: Math.random() * Math.PI,
+        spin: (Math.random() * 6 - 3),
+        color,
+        gravity: 160,
+        shape: 'spark',
+      });
+    }
+  }
+
+  function spawnSplash(x, y, color) {
+    for (let i = 0; i < 26; i += 1) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 80 + Math.random() * 160;
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        life: 0.6 + Math.random() * 0.5,
+        size: 4 + Math.random() * 5,
+        rotation: Math.random() * Math.PI,
+        spin: (Math.random() * 4 - 2),
+        color,
+        gravity: 220,
+        shape: 'circle',
+      });
     }
   }
 
@@ -259,12 +356,18 @@
     const img = images.cat;
     const w = cat.width;
     const h = cat.height;
+    // subtle tilt by velocity
+    const angle = clamp(cat.velocityX / cat.maxSpeed, -1, 1) * 0.15;
+    ctx.save();
+    ctx.translate(cat.x + w / 2, cat.y + h / 2);
+    ctx.rotate(angle);
     if (img.complete && img.naturalWidth) {
-      ctx.drawImage(img, cat.x, cat.y, w, h);
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
     } else {
       ctx.fillStyle = '#ffd166';
-      ctx.fillRect(cat.x, cat.y, w, h);
+      ctx.fillRect(-w / 2, -h / 2, w, h);
     }
+    ctx.restore();
   }
 
   function drawDrops() {
@@ -285,10 +388,31 @@
     }
   }
 
+  function drawParticles() {
+    for (const p of particles) {
+      const t = clamp(p.life, 0, 1);
+      const alpha = Math.min(1, t * 2);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rotation);
+      ctx.fillStyle = p.color;
+      if (p.shape === 'circle') {
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillRect(-p.size, -p.size * 0.5, p.size * 2, p.size);
+      }
+      ctx.restore();
+    }
+  }
+
   function draw() {
     drawBackground();
     drawDrops();
     drawCat();
+    drawParticles();
 
     // ground shine
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
@@ -298,8 +422,10 @@
   let last = 0;
   function loop(ts) {
     if (!last) last = ts;
-    const dt = Math.min(0.033, (ts - last) / 1000);
+    let dt = Math.min(0.033, (ts - last) / 1000);
     last = ts;
+
+    if (world.slowmo > 0) dt *= 0.25;
 
     update(dt);
     draw();
@@ -340,9 +466,10 @@
   });
 
   // Start/Restart
-  function start() {
+  async function start() {
     hide(overlayEl);
     hide(gameoverEl);
+    await enableTiltIfAvailable();
     resetGame();
   }
 
@@ -367,6 +494,28 @@
   function updateMuteIcon() { muteBtn.textContent = isMuted ? '🔇' : '🔊'; }
   muteBtn.addEventListener('click', () => { isMuted = !isMuted; updateMuteIcon(); });
   updateMuteIcon();
+
+  // Tilt controls (optional)
+  async function enableTiltIfAvailable() {
+    try {
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        const res = await DeviceOrientationEvent.requestPermission();
+        if (res === 'granted') {
+          window.addEventListener('deviceorientation', onTilt);
+          tilt.active = true;
+        }
+      } else if (typeof DeviceOrientationEvent !== 'undefined') {
+        window.addEventListener('deviceorientation', onTilt);
+        tilt.active = true;
+      }
+    } catch {}
+  }
+
+  function onTilt(e) {
+    if (typeof e.gamma === 'number') {
+      tilt.gamma = clamp(e.gamma, -45, 45);
+    }
+  }
 
   // Resize handling to maintain crisp rendering
   function resizeCanvas() {
